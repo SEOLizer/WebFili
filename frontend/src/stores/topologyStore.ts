@@ -10,12 +10,13 @@ import {
   type Connection,
   addEdge,
 } from '@xyflow/react';
-import type { DeviceType } from '../engine/types';
+import type { DeviceType, RouteEntry } from '../engine/types';
 
 export interface DeviceNodeData extends Record<string, unknown> {
   label: string;
   deviceType: DeviceType;
-  interfaces: Record<string, { ip?: string; subnet?: string; mac: string }>;
+  interfaces: Record<string, { ip?: string; subnet?: string; mac: string; gateway?: string }>;
+  routingTable?: RouteEntry[];
 }
 
 export type DeviceNode = Node<DeviceNodeData>;
@@ -38,7 +39,8 @@ interface TopologyStore {
   addDevice: (type: DeviceType, position: { x: number; y: number }) => void;
   removeDevice: (nodeId: string) => void;
   renameDevice: (nodeId: string, label: string) => void;
-  updateDeviceInterface: (nodeId: string, ifaceId: string, ip: string, subnet: string) => void;
+  updateDeviceInterface: (nodeId: string, ifaceId: string, ip: string, subnet: string, gateway?: string) => void;
+  updateRoutingTable: (nodeId: string, routes: RouteEntry[]) => void;
   undo: () => void;
   redo: () => void;
   saveToLocalStorage: () => void;
@@ -83,8 +85,23 @@ export const useTopologyStore = create<TopologyStore>()(
     },
 
     onConnect: (connection) => {
+      let { nodes } = get();
+      // Auto-create a new interface on routers when a new connection is made
+      [connection.source, connection.target].forEach((nodeId) => {
+        const node = nodes.find(n => n.id === nodeId);
+        if (!node || node.data.deviceType !== 'router') return;
+        const ifaceCount = Object.keys(node.data.interfaces).length;
+        const newIfaceId = `eth${ifaceCount}`;
+        if (!node.data.interfaces[newIfaceId]) {
+          nodes = nodes.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, interfaces: { ...n.data.interfaces, [newIfaceId]: { mac: randomMac() } } } }
+              : n
+          );
+        }
+      });
       const next = addEdge({ ...connection, animated: false }, get().edges);
-      set({ edges: next });
+      set({ nodes, edges: next });
       get().saveToLocalStorage();
     },
 
@@ -143,7 +160,7 @@ export const useTopologyStore = create<TopologyStore>()(
       get().saveToLocalStorage();
     },
 
-    updateDeviceInterface: (nodeId, ifaceId, ip, subnet) => {
+    updateDeviceInterface: (nodeId, ifaceId, ip, subnet, gateway) => {
       set((state) => ({
         nodes: state.nodes.map((n) =>
           n.id === nodeId
@@ -153,11 +170,20 @@ export const useTopologyStore = create<TopologyStore>()(
                   ...n.data,
                   interfaces: {
                     ...n.data.interfaces,
-                    [ifaceId]: { ...n.data.interfaces[ifaceId], ip, subnet },
+                    [ifaceId]: { ...n.data.interfaces[ifaceId], ip, subnet, ...(gateway !== undefined ? { gateway } : {}) },
                   },
                 },
               }
             : n
+        ),
+      }));
+      get().saveToLocalStorage();
+    },
+
+    updateRoutingTable: (nodeId, routes) => {
+      set((state) => ({
+        nodes: state.nodes.map((n) =>
+          n.id === nodeId ? { ...n, data: { ...n.data, routingTable: routes } } : n
         ),
       }));
       get().saveToLocalStorage();

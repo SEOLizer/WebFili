@@ -1,32 +1,24 @@
-import type { DeviceState, PacketState, ArpEntry, SimulationState } from './types';
+import type { DeviceState, PacketState, ArpEntry, SimulationState, InterfaceState } from './types';
 import { learnMac, lookupMac } from './mac';
 import { nanoid } from './nanoid';
 
 const ARP_TTL_MS = 60_000;
-const BROADCAST_MAC = 'FF:FF:FF:FF:FF:FF';
+export const BROADCAST_MAC = 'FF:FF:FF:FF:FF:FF';
 
-export function getPrimaryInterface(device: DeviceState) {
+export function getPrimaryInterface(device: DeviceState): InterfaceState {
   return Object.values(device.interfaces)[0];
 }
 
 export function getArpEntry(device: DeviceState, ip: string): ArpEntry | undefined {
   const now = Date.now();
-  return device.arpTable.find((e) => e.ip === ip && now < e.expiresAt);
+  return device.arpTable.find(e => e.ip === ip && now < e.expiresAt);
 }
 
 export function learnArp(device: DeviceState, ip: string, mac: string): void {
-  const existing = device.arpTable.findIndex((e) => e.ip === ip);
-  const entry: ArpEntry = {
-    ip,
-    mac,
-    interfaceId: 'eth0',
-    expiresAt: Date.now() + ARP_TTL_MS,
-  };
-  if (existing >= 0) {
-    device.arpTable[existing] = entry;
-  } else {
-    device.arpTable.push(entry);
-  }
+  const existing = device.arpTable.findIndex(e => e.ip === ip);
+  const entry: ArpEntry = { ip, mac, interfaceId: 'eth0', expiresAt: Date.now() + ARP_TTL_MS };
+  if (existing >= 0) device.arpTable[existing] = entry;
+  else device.arpTable.push(entry);
 }
 
 export function createArpRequest(fromDevice: DeviceState, targetIp: string): PacketState {
@@ -37,13 +29,7 @@ export function createArpRequest(fromDevice: DeviceState, targetIp: string): Pac
       srcMac: iface.mac,
       destMac: BROADCAST_MAC,
       etherType: 'arp',
-      arp: {
-        operation: 'request',
-        senderMac: iface.mac,
-        senderIp: iface.ip ?? '',
-        targetMac: '00:00:00:00:00:00',
-        targetIp,
-      },
+      arp: { operation: 'request', senderMac: iface.mac, senderIp: iface.ip ?? '', targetMac: '00:00:00:00:00:00', targetIp },
     },
     status: 'in-transit',
     currentDeviceId: fromDevice.id,
@@ -52,25 +38,14 @@ export function createArpRequest(fromDevice: DeviceState, targetIp: string): Pac
   };
 }
 
-export function createArpReply(
-  fromDevice: DeviceState,
-  requesterMac: string,
-  requesterIp: string
-): PacketState {
-  const iface = getPrimaryInterface(fromDevice);
+export function createArpReply(fromDevice: DeviceState, iface: InterfaceState, requesterMac: string, requesterIp: string): PacketState {
   return {
     id: nanoid(),
     layer2: {
       srcMac: iface.mac,
       destMac: requesterMac,
       etherType: 'arp',
-      arp: {
-        operation: 'reply',
-        senderMac: iface.mac,
-        senderIp: iface.ip ?? '',
-        targetMac: requesterMac,
-        targetIp: requesterIp,
-      },
+      arp: { operation: 'reply', senderMac: iface.mac, senderIp: iface.ip ?? '', targetMac: requesterMac, targetIp: requesterIp },
     },
     status: 'in-transit',
     currentDeviceId: fromDevice.id,
@@ -95,57 +70,49 @@ export function processArpAtEndpoint(
   const arp = packet.layer2.arp;
   if (!arp) return [];
 
-  const iface = getPrimaryInterface(device);
-
-  // Always learn sender's MAC/IP
-  if (arp.senderIp && arp.senderMac) {
-    learnArp(device, arp.senderIp, arp.senderMac);
-  }
+  // Learn sender MAC/IP on all matching interfaces
+  if (arp.senderIp && arp.senderMac) learnArp(device, arp.senderIp, arp.senderMac);
 
   if (arp.operation === 'request') {
-    if (arp.targetIp !== iface.ip) return [];
-    const reply = createArpReply(device, arp.senderMac, arp.senderIp);
-    const conn = findConnectionTo(device.id, simState, incomingConnectionId);
+    // Find the interface that owns this target IP
+    const matchIface = Object.values(device.interfaces).find(i => i.ip === arp.targetIp);
+    if (!matchIface) return [];
+
+    const reply = createArpReply(device, matchIface, arp.senderMac, arp.senderIp);
+    const conn = incomingConnectionId
+      ? simState.connections[incomingConnectionId]
+      : firstConnectionOf(device.id, simState);
     if (!conn) return [];
-    return [{ packet: reply, fromDeviceId: device.id, toDeviceId: conn.otherDeviceId, connectionId: conn.id }];
+    const otherId = conn.sourceDeviceId === device.id ? conn.targetDeviceId : conn.sourceDeviceId;
+    return [{ packet: reply, fromDeviceId: device.id, toDeviceId: otherId, connectionId: conn.id }];
   }
 
   if (arp.operation === 'reply') {
     learnArp(device, arp.senderIp, arp.senderMac);
-    // Release any packets queued waiting for this ARP
     const queued = device.pendingArp[arp.senderIp] ?? [];
     delete device.pendingArp[arp.senderIp];
-    const outgoing: Transmission[] = [];
+    const out: Transmission[] = [];
     for (const qp of queued) {
       qp.layer2.destMac = arp.senderMac;
-      const conn = findConnectionTo(device.id, simState, null);
-      if (conn) outgoing.push({ packet: qp, fromDeviceId: device.id, toDeviceId: conn.otherDeviceId, connectionId: conn.id });
+      // Forward via the connection the ARP reply came in on (router: outgoing iface)
+      const conn = incomingConnectionId
+        ? simState.connections[incomingConnectionId]
+        : firstConnectionOf(device.id, simState);
+      if (conn) {
+        const otherId = conn.sourceDeviceId === device.id ? conn.targetDeviceId : conn.sourceDeviceId;
+        out.push({ packet: qp, fromDeviceId: device.id, toDeviceId: otherId, connectionId: conn.id });
+      }
     }
-    return outgoing;
+    return out;
   }
 
   return [];
 }
 
-function findConnectionTo(
-  deviceId: string,
-  simState: SimulationState,
-  preferConnectionId: string | null
-): { id: string; otherDeviceId: string } | null {
-  if (preferConnectionId) {
-    const conn = simState.connections[preferConnectionId];
-    if (conn) {
-      const otherId = conn.sourceDeviceId === deviceId ? conn.targetDeviceId : conn.sourceDeviceId;
-      return { id: preferConnectionId, otherDeviceId: otherId };
-    }
-  }
-  for (const conn of Object.values(simState.connections)) {
-    if (conn.sourceDeviceId === deviceId || conn.targetDeviceId === deviceId) {
-      const otherId = conn.sourceDeviceId === deviceId ? conn.targetDeviceId : conn.sourceDeviceId;
-      return { id: conn.id, otherDeviceId: otherId };
-    }
-  }
-  return null;
+function firstConnectionOf(deviceId: string, simState: SimulationState) {
+  return Object.values(simState.connections).find(
+    c => c.sourceDeviceId === deviceId || c.targetDeviceId === deviceId
+  );
 }
 
 export function processArpAtSwitch(
@@ -157,21 +124,16 @@ export function processArpAtSwitch(
   const arp = packet.layer2.arp;
   if (!arp) return [];
 
-  if (arp.senderMac && incomingConnectionId) {
-    learnMac(device, arp.senderMac, incomingConnectionId);
-  }
+  if (arp.senderMac && incomingConnectionId) learnMac(device, arp.senderMac, incomingConnectionId);
 
-  const deviceConnections = getDeviceConnections(device.id, simState);
+  const conns = getDeviceConnections(device.id, simState);
 
   if (packet.layer2.destMac === BROADCAST_MAC || arp.operation === 'request') {
-    // Flood to all ports except incoming
-    return deviceConnections
-      .filter((c) => c.id !== incomingConnectionId)
-      .map((c) => ({
+    return conns
+      .filter(c => c.id !== incomingConnectionId)
+      .map(c => ({
         packet: { ...packet, id: nanoid(), path: [...packet.path], status: 'in-transit' as const },
-        fromDeviceId: device.id,
-        toDeviceId: c.otherDeviceId,
-        connectionId: c.id,
+        fromDeviceId: device.id, toDeviceId: c.otherDeviceId, connectionId: c.id,
       }));
   }
 
@@ -183,14 +145,11 @@ export function processArpAtSwitch(
     return [{ packet: { ...packet, id: nanoid(), path: [...packet.path], status: 'in-transit' as const }, fromDeviceId: device.id, toDeviceId: otherId, connectionId: destConnId }];
   }
 
-  // Unknown unicast – flood
-  return deviceConnections
-    .filter((c) => c.id !== incomingConnectionId)
-    .map((c) => ({
+  return conns
+    .filter(c => c.id !== incomingConnectionId)
+    .map(c => ({
       packet: { ...packet, id: nanoid(), path: [...packet.path], status: 'in-transit' as const },
-      fromDeviceId: device.id,
-      toDeviceId: c.otherDeviceId,
-      connectionId: c.id,
+      fromDeviceId: device.id, toDeviceId: c.otherDeviceId, connectionId: c.id,
     }));
 }
 
@@ -199,9 +158,6 @@ export function getDeviceConnections(
   simState: SimulationState
 ): { id: string; otherDeviceId: string }[] {
   return Object.values(simState.connections)
-    .filter((c) => c.sourceDeviceId === deviceId || c.targetDeviceId === deviceId)
-    .map((c) => ({
-      id: c.id,
-      otherDeviceId: c.sourceDeviceId === deviceId ? c.targetDeviceId : c.sourceDeviceId,
-    }));
+    .filter(c => c.sourceDeviceId === deviceId || c.targetDeviceId === deviceId)
+    .map(c => ({ id: c.id, otherDeviceId: c.sourceDeviceId === deviceId ? c.targetDeviceId : c.sourceDeviceId }));
 }

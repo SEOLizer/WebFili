@@ -5,6 +5,7 @@ export interface InterfaceState {
   ip?: string;
   subnet?: string;
   mac: string;
+  gateway?: string;
   connectedTo?: string;
 }
 
@@ -62,8 +63,9 @@ export interface PacketState {
     destPort?: number;
     protocol: 'http' | 'dns' | 'dhcp' | 'icmp';
     payload: string;
-    icmpType?: 'echo-request' | 'echo-reply' | 'ttl-exceeded';
+    icmpType?: 'echo-request' | 'echo-reply' | 'ttl-exceeded' | 'unreachable';
     icmpSeq?: number;
+    icmpOriginalTtl?: number;
   };
   status: 'queued' | 'in-transit' | 'received' | 'dropped';
   currentDeviceId: string;

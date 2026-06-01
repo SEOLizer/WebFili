@@ -6,11 +6,15 @@ import Toolbox from './components/canvas/Toolbox';
 import Canvas from './components/canvas/Canvas';
 import RightPanel from './components/panels/RightPanel';
 import { useTopologyStore } from './stores/topologyStore';
+import { useSimulationUiStore } from './stores/simulationUiStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 if (import.meta.env.DEV) {
-  // Expose stores for Playwright testing
   (window as unknown as Record<string, unknown>).__topoStore = useTopologyStore;
+  (window as unknown as Record<string, unknown>).__simUiStore = useSimulationUiStore;
+  import('./simulation/simState').then(m => {
+    (window as unknown as Record<string, unknown>).__simState = m.simState;
+  });
 }
 
 function AppInner() {

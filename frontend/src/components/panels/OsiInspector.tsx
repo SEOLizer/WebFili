@@ -31,6 +31,7 @@ export default function OsiInspector() {
           <option value="ipv4">IPv4</option>
           <option value="echo-request">ICMP Echo Request</option>
           <option value="echo-reply">ICMP Echo Reply</option>
+          <option value="ttl-exceeded">ICMP TTL Exceeded</option>
         </select>
       </div>
 
@@ -120,8 +121,9 @@ function PacketDetail({ packet }: { packet: PacketState }) {
           <Field label="Protokoll" value={packet.layer3.protocol.toUpperCase()} />
           <Field label="TTL" value={String(packet.layer3.ttl)} />
           <Hint>
-            Das IPv4-Paket enthält die logischen (Software-)Adressen. Der Router nutzt die Ziel-IP
-            für das Routing. Das TTL-Feld verhindert, dass Pakete endlos im Netz kreisen.
+            {packet.layer3.ttl < 64
+              ? `TTL wurde von einem Router dekrementiert. Aktueller Wert: ${packet.layer3.ttl}. Jeder Router verringert den TTL-Wert um 1 – erreicht er 0, wird das Paket verworfen und ein ICMP Time Exceeded zurückgesendet. Das verhindert Routing-Schleifen.`
+              : 'Das IPv4-Paket enthält die logischen (Software-)Adressen. Der Router nutzt die Ziel-IP für das Routing. Das TTL-Feld (Time to Live) verhindert, dass Pakete endlos im Netz kreisen.'}
           </Hint>
         </AccordionItem>
       )}
@@ -144,7 +146,11 @@ function PacketDetail({ packet }: { packet: PacketState }) {
           <Hint>
             {packet.layer4And7.icmpType === 'echo-request'
               ? 'Ein ICMP Echo Request testet, ob ein Gerät erreichbar ist. Das Zielgerät muss mit einem Echo Reply antworten.'
-              : 'Der Echo Reply bestätigt, dass das Gerät erreichbar ist und Pakete zurücksenden kann. Der Ping ist damit erfolgreich.'}
+              : packet.layer4And7.icmpType === 'echo-reply'
+              ? 'Der Echo Reply bestätigt, dass das Gerät erreichbar ist und Pakete zurücksenden kann. Der Ping ist damit erfolgreich.'
+              : packet.layer4And7.icmpType === 'ttl-exceeded'
+              ? `Ein Router hat das Paket verworfen, weil der TTL-Zähler 0 erreicht hat. Diese Meldung nutzt traceroute, um den Pfad Hop für Hop zu erkunden.`
+              : 'ICMP-Nachricht.'}
           </Hint>
         </AccordionItem>
       )}
@@ -188,10 +194,11 @@ function Hint({ children }: { children: React.ReactNode }) {
 function getPacketLabel(p: PacketState): string {
   if (p.layer2.etherType === 'arp') {
     const op = p.layer2.arp?.operation === 'request' ? 'ARP Req' : 'ARP Reply';
-    return `${op} ${p.layer2.arp?.targetIp ?? ''}`;
+    return `${op} ${p.layer2.arp?.targetIp ?? p.layer2.arp?.senderIp ?? ''}`;
   }
   if (p.layer4And7?.icmpType === 'echo-request') return `ICMP Echo → ${p.layer3?.destIp}`;
   if (p.layer4And7?.icmpType === 'echo-reply') return `ICMP Reply ← ${p.layer3?.srcIp}`;
+  if (p.layer4And7?.icmpType === 'ttl-exceeded') return `TTL Exceeded von ${p.layer3?.srcIp}`;
   return `Paket ${p.id.slice(-6)}`;
 }
 
