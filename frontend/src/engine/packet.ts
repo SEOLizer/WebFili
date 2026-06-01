@@ -25,6 +25,9 @@ export function processPacketAtDevice(
       return processAtSwitch(packet, device, simState, incomingConnectionId);
     case 'router':
       return processAtRouter(packet, device, simState, incomingConnectionId);
+    case 'wan-cloud':
+      // Special sentinel: loop.ts intercepts this and emits via Socket.io
+      return [{ packet, fromDeviceId: device.id, toDeviceId: '__wan__', connectionId: '__wan__' }];
     default:
       return processAtEndpoint(packet, device, simState, incomingConnectionId);
   }
