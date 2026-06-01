@@ -12,6 +12,7 @@ import {
 } from '@xyflow/react';
 import type { DeviceType, RouteEntry } from '../engine/types';
 import type { ServiceConfig } from '../engine/service-config';
+import { api } from '../lib/api';
 
 export interface DeviceNodeData extends Record<string, unknown> {
   label: string;
@@ -34,6 +35,9 @@ interface TopologyStore {
   history: HistoryEntry[];
   historyIndex: number;
   deviceCounter: Record<DeviceType, number>;
+  projectName: string;
+  cloudProjectId: number | null;
+  isDirty: boolean;
 
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -46,8 +50,12 @@ interface TopologyStore {
   updateServices: (nodeId: string, services: ServiceConfig) => void;
   undo: () => void;
   redo: () => void;
+  setProjectName: (name: string) => void;
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
+  saveToCloud: () => Promise<void>;
+  loadProjectFromCloud: (id: number) => Promise<void>;
+  newProject: () => void;
 }
 
 const LABELS: Record<DeviceType, string> = {
@@ -74,16 +82,19 @@ export const useTopologyStore = create<TopologyStore>()(
     history: [],
     historyIndex: -1,
     deviceCounter: { pc: 0, server: 0, switch: 0, router: 0, 'wan-cloud': 0 },
+    projectName: 'Mein Projekt',
+    cloudProjectId: null,
+    isDirty: false,
 
     onNodesChange: (changes) => {
       const next = applyNodeChanges(changes, get().nodes) as DeviceNode[];
-      set({ nodes: next });
+      set({ nodes: next, isDirty: true });
       get().saveToLocalStorage();
     },
 
     onEdgesChange: (changes) => {
       const next = applyEdgeChanges(changes, get().edges);
-      set({ edges: next });
+      set({ edges: next, isDirty: true });
       get().saveToLocalStorage();
     },
 
@@ -104,7 +115,7 @@ export const useTopologyStore = create<TopologyStore>()(
         }
       });
       const next = addEdge({ ...connection, animated: false }, get().edges);
-      set({ nodes, edges: next });
+      set({ nodes, edges: next, isDirty: true });
       get().saveToLocalStorage();
     },
 
@@ -141,6 +152,7 @@ export const useTopologyStore = create<TopologyStore>()(
         deviceCounter: newCounter,
         history: newHistory,
         historyIndex: newHistory.length - 1,
+        isDirty: true,
       });
       get().saveToLocalStorage();
     },
@@ -150,6 +162,7 @@ export const useTopologyStore = create<TopologyStore>()(
       set({
         nodes: nodes.filter((n) => n.id !== nodeId),
         edges: edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
+        isDirty: true,
       });
       get().saveToLocalStorage();
     },
@@ -159,6 +172,7 @@ export const useTopologyStore = create<TopologyStore>()(
         nodes: state.nodes.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, label } } : n
         ),
+        isDirty: true,
       }));
       get().saveToLocalStorage();
     },
@@ -179,6 +193,7 @@ export const useTopologyStore = create<TopologyStore>()(
               }
             : n
         ),
+        isDirty: true,
       }));
       get().saveToLocalStorage();
     },
@@ -188,6 +203,7 @@ export const useTopologyStore = create<TopologyStore>()(
         nodes: state.nodes.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, routingTable: routes } } : n
         ),
+        isDirty: true,
       }));
       get().saveToLocalStorage();
     },
@@ -197,6 +213,7 @@ export const useTopologyStore = create<TopologyStore>()(
         nodes: state.nodes.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, services } } : n
         ),
+        isDirty: true,
       }));
       get().saveToLocalStorage();
     },
@@ -205,7 +222,7 @@ export const useTopologyStore = create<TopologyStore>()(
       const { history, historyIndex } = get();
       if (historyIndex < 0) return;
       const entry = history[historyIndex];
-      set({ nodes: entry.nodes, edges: entry.edges, historyIndex: historyIndex - 1 });
+      set({ nodes: entry.nodes, edges: entry.edges, historyIndex: historyIndex - 1, isDirty: true });
       get().saveToLocalStorage();
     },
 
@@ -215,24 +232,68 @@ export const useTopologyStore = create<TopologyStore>()(
       const snapshot: HistoryEntry = { nodes, edges };
       const newHistory = [...history.slice(0, historyIndex + 1), snapshot];
       const entry = history[historyIndex + 1];
-      set({ nodes: entry.nodes, edges: entry.edges, history: newHistory, historyIndex: historyIndex + 1 });
+      set({ nodes: entry.nodes, edges: entry.edges, history: newHistory, historyIndex: historyIndex + 1, isDirty: true });
       get().saveToLocalStorage();
     },
 
+    setProjectName: (name) => set({ projectName: name, isDirty: true }),
+
     saveToLocalStorage: () => {
-      const { nodes, edges, deviceCounter } = get();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes, edges, deviceCounter }));
+      const { nodes, edges, deviceCounter, projectName, cloudProjectId } = get();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes, edges, deviceCounter, projectName, cloudProjectId }));
     },
 
     loadFromLocalStorage: () => {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       try {
-        const { nodes, edges, deviceCounter } = JSON.parse(raw);
-        set({ nodes, edges, deviceCounter });
+        const { nodes, edges, deviceCounter, projectName, cloudProjectId } = JSON.parse(raw);
+        set({ nodes, edges, deviceCounter, projectName: projectName ?? 'Mein Projekt', cloudProjectId: cloudProjectId ?? null, isDirty: false });
       } catch {
         // corrupt storage – ignore
       }
+    },
+
+    saveToCloud: async () => {
+      const { nodes, edges, projectName, cloudProjectId } = get();
+      const topology = { nodes, edges };
+      let result: { id: number; name: string };
+      if (cloudProjectId) {
+        result = await api.put<{ id: number; name: string }>(`/api/projects/${cloudProjectId}`, { name: projectName, topology });
+      } else {
+        result = await api.post<{ id: number; name: string }>('/api/projects', { name: projectName, topology });
+      }
+      set({ cloudProjectId: result.id, isDirty: false });
+      get().saveToLocalStorage();
+    },
+
+    loadProjectFromCloud: async (id) => {
+      const result = await api.get<{ id: number; name: string; topology: { nodes: DeviceNode[]; edges: Edge[] } }>(`/api/projects/${id}`);
+      const { nodes, edges } = result.topology ?? { nodes: [], edges: [] };
+      set({
+        nodes,
+        edges,
+        projectName: result.name,
+        cloudProjectId: result.id,
+        history: [],
+        historyIndex: -1,
+        isDirty: false,
+      });
+      get().saveToLocalStorage();
+    },
+
+    newProject: () => {
+      set({
+        nodes: [],
+        edges: [],
+        history: [],
+        historyIndex: -1,
+        deviceCounter: { pc: 0, server: 0, switch: 0, router: 0, 'wan-cloud': 0 },
+        projectName: 'Mein Projekt',
+        cloudProjectId: null,
+        isDirty: false,
+      });
+      localStorage.removeItem(STORAGE_KEY);
     },
   }))
 );

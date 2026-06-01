@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           Int           @id @default(autoincrement())
+  username     String        @unique @db.VarChar(64)
+  email        String        @unique @db.VarChar(255)
+  passwordHash String        @map("password_hash") @db.VarChar(255)
+  role         String        @default("student") @db.VarChar(16)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  projects     Project[]
+  links        VirtualLink[]
+
+  @@map("users")
+}
+
+model Project {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String   @db.VarChar(255)
+  topology  Json     @default("{}")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("projects")
+}
+
+model VirtualLink {
+  linkToken String    @id @map("link_token") @db.VarChar(64)
+  roomName  String    @map("room_name") @db.VarChar(128)
+  creatorId Int       @map("creator_id")
+  maxUsers  Int       @default(30) @map("max_users") @db.SmallInt
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  creator   User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("virtual_links")
+}
