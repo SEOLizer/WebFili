@@ -7,6 +7,7 @@ import Canvas from './components/canvas/Canvas';
 import RightPanel from './components/panels/RightPanel';
 import { useTopologyStore } from './stores/topologyStore';
 import { useSimulationUiStore } from './stores/simulationUiStore';
+import { useAuthStore } from './stores/authStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 if (import.meta.env.DEV) {
@@ -19,11 +20,13 @@ if (import.meta.env.DEV) {
 
 function AppInner() {
   const loadFromLocalStorage = useTopologyStore((s) => s.loadFromLocalStorage);
+  const initFromStorage = useAuthStore((s) => s.initFromStorage);
   useKeyboardShortcuts();
 
   useEffect(() => {
+    initFromStorage();
     loadFromLocalStorage();
-  }, [loadFromLocalStorage]);
+  }, [initFromStorage, loadFromLocalStorage]);
 
   return (
     <div className="flex flex-col h-full bg-gray-950 text-white">
