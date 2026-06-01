@@ -11,12 +11,14 @@ import {
   addEdge,
 } from '@xyflow/react';
 import type { DeviceType, RouteEntry } from '../engine/types';
+import type { ServiceConfig } from '../engine/service-config';
 
 export interface DeviceNodeData extends Record<string, unknown> {
   label: string;
   deviceType: DeviceType;
   interfaces: Record<string, { ip?: string; subnet?: string; mac: string; gateway?: string }>;
   routingTable?: RouteEntry[];
+  services?: ServiceConfig;
 }
 
 export type DeviceNode = Node<DeviceNodeData>;
@@ -41,6 +43,7 @@ interface TopologyStore {
   renameDevice: (nodeId: string, label: string) => void;
   updateDeviceInterface: (nodeId: string, ifaceId: string, ip: string, subnet: string, gateway?: string) => void;
   updateRoutingTable: (nodeId: string, routes: RouteEntry[]) => void;
+  updateServices: (nodeId: string, services: ServiceConfig) => void;
   undo: () => void;
   redo: () => void;
   saveToLocalStorage: () => void;
@@ -184,6 +187,15 @@ export const useTopologyStore = create<TopologyStore>()(
       set((state) => ({
         nodes: state.nodes.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, routingTable: routes } } : n
+        ),
+      }));
+      get().saveToLocalStorage();
+    },
+
+    updateServices: (nodeId, services) => {
+      set((state) => ({
+        nodes: state.nodes.map((n) =>
+          n.id === nodeId ? { ...n, data: { ...n.data, services } } : n
         ),
       }));
       get().saveToLocalStorage();

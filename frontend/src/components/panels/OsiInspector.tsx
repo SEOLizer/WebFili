@@ -129,33 +129,94 @@ function PacketDetail({ packet }: { packet: PacketState }) {
       )}
 
       {packet.layer4And7 && (
-        <AccordionItem value="l4" title="Layer 4+7 – ICMP">
-          <Field
-            label="Typ"
-            value={
-              packet.layer4And7.icmpType === 'echo-request'
-                ? 'Echo Request (Ping-Anfrage)'
-                : packet.layer4And7.icmpType === 'echo-reply'
-                ? 'Echo Reply (Ping-Antwort)'
-                : packet.layer4And7.icmpType ?? ''
-            }
-          />
-          {packet.layer4And7.icmpSeq !== undefined && (
-            <Field label="Sequenz-Nr." value={String(packet.layer4And7.icmpSeq)} />
-          )}
-          <Hint>
-            {packet.layer4And7.icmpType === 'echo-request'
-              ? 'Ein ICMP Echo Request testet, ob ein Gerät erreichbar ist. Das Zielgerät muss mit einem Echo Reply antworten.'
-              : packet.layer4And7.icmpType === 'echo-reply'
-              ? 'Der Echo Reply bestätigt, dass das Gerät erreichbar ist und Pakete zurücksenden kann. Der Ping ist damit erfolgreich.'
-              : packet.layer4And7.icmpType === 'ttl-exceeded'
-              ? `Ein Router hat das Paket verworfen, weil der TTL-Zähler 0 erreicht hat. Diese Meldung nutzt traceroute, um den Pfad Hop für Hop zu erkunden.`
-              : 'ICMP-Nachricht.'}
-          </Hint>
-        </AccordionItem>
+        <Layer4Item packet={packet} />
       )}
     </Accordion.Root>
   );
+}
+
+function Layer4Item({ packet }: { packet: PacketState }) {
+  const l4 = packet.layer4And7!;
+  if (l4.protocol === 'icmp') {
+    const label = l4.icmpType === 'echo-request' ? 'Echo Request (Ping-Anfrage)'
+      : l4.icmpType === 'echo-reply' ? 'Echo Reply (Ping-Antwort)'
+      : l4.icmpType === 'ttl-exceeded' ? 'Time Exceeded (TTL = 0)'
+      : l4.icmpType ?? 'ICMP';
+    return (
+      <AccordionItem value="l4" title="Layer 4+7 – ICMP">
+        <Field label="Typ" value={label} />
+        {l4.icmpSeq !== undefined && <Field label="Sequenz-Nr." value={String(l4.icmpSeq)} />}
+        <Hint>
+          {l4.icmpType === 'echo-request' ? 'Ein ICMP Echo Request testet, ob ein Gerät erreichbar ist.'
+          : l4.icmpType === 'echo-reply' ? 'Der Echo Reply bestätigt Erreichbarkeit. Ping erfolgreich.'
+          : l4.icmpType === 'ttl-exceeded' ? 'Ein Router verwarf das Paket wegen TTL=0. Traceroute nutzt diese Meldung, um Router auf dem Pfad zu identifizieren.'
+          : 'ICMP-Meldung.'}
+        </Hint>
+      </AccordionItem>
+    );
+  }
+  if (l4.protocol === 'dhcp') {
+    const d = l4.dhcp!;
+    return (
+      <AccordionItem value="l4" title={`Layer 4+7 – UDP/DHCP (Port ${l4.srcPort}→${l4.destPort})`}>
+        <Field label="Nachrichtentyp" value={d.messageType.toUpperCase()} />
+        <Field label="Client-MAC" value={d.clientMac} />
+        {d.offeredIp && <Field label="Angebotene IP" value={d.offeredIp} />}
+        {d.serverIp && <Field label="DHCP-Server" value={d.serverIp} />}
+        {d.subnetMask && <Field label="Subnetzmaske" value={d.subnetMask} />}
+        {d.gateway && <Field label="Gateway" value={d.gateway} />}
+        {d.dnsServer && <Field label="DNS-Server" value={d.dnsServer} />}
+        <Hint>
+          {d.messageType === 'discover' ? 'Das Gerät sucht per Broadcast nach einem DHCP-Server im Netz (Discover). Es hat noch keine IP-Adresse.'
+          : d.messageType === 'offer' ? `Der DHCP-Server bietet dem Client die IP ${d.offeredIp} an (Offer). Lease-Zeit: ${d.leaseTime}s.`
+          : d.messageType === 'request' ? `Der Client fordert die angebotene IP ${d.requestedIp} offiziell an (Request).`
+          : d.messageType === 'ack' ? `Der Server bestätigt die IP-Vergabe (Ack). Der Client konfiguriert nun seine Netzwerkschnittstelle.`
+          : 'DHCP-Nachricht.'}
+        </Hint>
+      </AccordionItem>
+    );
+  }
+  if (l4.protocol === 'dns') {
+    const d = l4.dns!;
+    return (
+      <AccordionItem value="l4" title={`Layer 4+7 – UDP/DNS (Port ${l4.srcPort}→${l4.destPort})`}>
+        <Field label="Typ" value={d.messageType === 'query' ? 'Anfrage (Query)' : 'Antwort (Response)'} />
+        <Field label="Hostname" value={d.hostname} />
+        {d.resolvedIp && <Field label="Aufgelöste IP" value={d.resolvedIp} />}
+        <Hint>
+          {d.messageType === 'query'
+            ? `Das Gerät fragt den DNS-Server nach der IP-Adresse von "${d.hostname}". DNS läuft über UDP auf Port 53.`
+            : d.resolvedIp
+            ? `Der DNS-Server antwortet: ${d.hostname} → ${d.resolvedIp}. Das Gerät kann nun eine Verbindung aufbauen.`
+            : `Hostname "${d.hostname}" ist dem DNS-Server nicht bekannt (NXDOMAIN).`}
+        </Hint>
+      </AccordionItem>
+    );
+  }
+  if (l4.protocol === 'http') {
+    const h = l4.http!;
+    return (
+      <AccordionItem value="l4" title={`Layer 4+7 – TCP/HTTP (Port ${l4.srcPort}→${l4.destPort})`}>
+        {h.method && <Field label="Methode" value={`${h.method} ${h.path}`} />}
+        {h.host && <Field label="Host" value={h.host} />}
+        {h.statusCode && <Field label="Status" value={`${h.statusCode} ${h.statusText}`} />}
+        {h.contentType && <Field label="Content-Type" value={h.contentType} />}
+        {h.body && (
+          <div className="mt-1 p-1.5 bg-gray-900 rounded border border-gray-700 font-mono text-[10px] text-gray-300 max-h-24 overflow-y-auto">
+            {h.body.slice(0, 300)}
+          </div>
+        )}
+        <Hint>
+          {h.method === 'GET'
+            ? `HTTP GET-Anfrage an den Webserver. TCP-Port 80 ist der Standard-HTTP-Port. Der Server verarbeitet die Anfrage und sendet eine HTTP-Antwort zurück.`
+            : h.statusCode
+            ? `HTTP-Antwort vom Server: ${h.statusCode} ${h.statusText}. Der Inhalt wird in der Antwort-Body übertragen (Applikationsschicht, Layer 7).`
+            : 'HTTP-Paket.'}
+        </Hint>
+      </AccordionItem>
+    );
+  }
+  return null;
 }
 
 function AccordionItem({ value, title, children }: { value: string; title: string; children: React.ReactNode }) {
@@ -196,16 +257,32 @@ function getPacketLabel(p: PacketState): string {
     const op = p.layer2.arp?.operation === 'request' ? 'ARP Req' : 'ARP Reply';
     return `${op} ${p.layer2.arp?.targetIp ?? p.layer2.arp?.senderIp ?? ''}`;
   }
-  if (p.layer4And7?.icmpType === 'echo-request') return `ICMP Echo → ${p.layer3?.destIp}`;
-  if (p.layer4And7?.icmpType === 'echo-reply') return `ICMP Reply ← ${p.layer3?.srcIp}`;
-  if (p.layer4And7?.icmpType === 'ttl-exceeded') return `TTL Exceeded von ${p.layer3?.srcIp}`;
+  const l4 = p.layer4And7;
+  if (!l4) return `Paket ${p.id.slice(-6)}`;
+  if (l4.protocol === 'icmp') {
+    if (l4.icmpType === 'echo-request') return `ICMP Echo → ${p.layer3?.destIp}`;
+    if (l4.icmpType === 'echo-reply') return `ICMP Reply ← ${p.layer3?.srcIp}`;
+    if (l4.icmpType === 'ttl-exceeded') return `TTL Exceeded von ${p.layer3?.srcIp}`;
+  }
+  if (l4.protocol === 'dhcp') return `DHCP ${l4.dhcp?.messageType?.toUpperCase()} ${l4.dhcp?.offeredIp ?? ''}`;
+  if (l4.protocol === 'dns') {
+    if (l4.dns?.messageType === 'query') return `DNS Query ${l4.dns.hostname}`;
+    return `DNS Response ${l4.dns?.hostname} → ${l4.dns?.resolvedIp ?? 'NXDOMAIN'}`;
+  }
+  if (l4.protocol === 'http') {
+    if (l4.http?.method) return `HTTP ${l4.http.method} ${l4.http.path}`;
+    return `HTTP ${l4.http?.statusCode} ${l4.http?.statusText}`;
+  }
   return `Paket ${p.id.slice(-6)}`;
 }
 
 function getStatusColor(p: PacketState): string {
   if (p.status === 'dropped') return 'text-red-400';
-  if (p.layer2.etherType === 'arp')
-    return p.layer2.arp?.operation === 'reply' ? 'text-green-400' : 'text-amber-400';
-  if (p.layer4And7?.icmpType === 'echo-reply') return 'text-blue-400';
-  return 'text-red-300';
+  if (p.layer2.etherType === 'arp') return p.layer2.arp?.operation === 'reply' ? 'text-green-400' : 'text-amber-400';
+  const proto = p.layer4And7?.protocol;
+  if (proto === 'icmp') return p.layer4And7?.icmpType === 'echo-reply' ? 'text-blue-400' : 'text-orange-400';
+  if (proto === 'dhcp') return 'text-purple-400';
+  if (proto === 'dns') return 'text-cyan-400';
+  if (proto === 'http') return 'text-pink-400';
+  return 'text-gray-400';
 }

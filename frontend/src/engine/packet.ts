@@ -5,6 +5,9 @@ import { processIcmpAtEndpoint, processIcmpAtSwitch, createTtlExceeded } from '.
 import { longestPrefixMatch, buildConnectedRoutes } from './routing';
 import { learnMac, lookupMac } from './mac';
 import { nanoid } from './nanoid';
+import { processDhcpAtServer, processDhcpAtClient } from './dhcp';
+import { processDnsAtServer } from './dns';
+import { processHttpAtServer } from './http';
 
 const MAX_PATH_LENGTH = 30;
 const BROADCAST_MAC = 'FF:FF:FF:FF:FF:FF';
@@ -50,6 +53,37 @@ function processAtEndpoint(
   }
   if (packet.layer3?.protocol === 'icmp') {
     return processIcmpAtEndpoint(packet, device, simState, incomingConnectionId);
+  }
+  if (packet.layer3?.protocol === 'udp' || packet.layer3?.protocol === 'tcp') {
+    return processServicePacket(packet, device, simState);
+  }
+  return [];
+}
+
+function processServicePacket(
+  packet: PacketState,
+  device: DeviceState,
+  simState: SimulationState
+): Transmission[] {
+  const destPort = packet.layer4And7?.destPort;
+  const destIp = packet.layer3?.destIp;
+  const myIps = Object.values(device.interfaces).map(i => i.ip).filter(Boolean);
+
+  // Only process if packet is addressed to us (or broadcast for DHCP)
+  const isBroadcast = destIp === '255.255.255.255';
+  if (!isBroadcast && !myIps.includes(destIp)) return [];
+
+  if (destPort === 67 && device.serviceState?.dhcp) {
+    return processDhcpAtServer(packet, device, simState);
+  }
+  if (destPort === 68) {
+    return processDhcpAtClient(packet, device, simState);
+  }
+  if (destPort === 53 && device.serviceState?.dns) {
+    return processDnsAtServer(packet, device, simState);
+  }
+  if (destPort === 80 && device.serviceState?.http) {
+    return processHttpAtServer(packet, device, simState);
   }
   return [];
 }

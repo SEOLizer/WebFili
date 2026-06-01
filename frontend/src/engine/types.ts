@@ -44,6 +44,36 @@ export interface ArpPayload {
   targetIp: string;
 }
 
+export interface DhcpPayload {
+  messageType: 'discover' | 'offer' | 'request' | 'ack' | 'nak';
+  clientMac: string;
+  transactionId: number;
+  offeredIp?: string;
+  requestedIp?: string;
+  serverIp?: string;
+  subnetMask?: string;
+  gateway?: string;
+  dnsServer?: string;
+  leaseTime?: number;
+}
+
+export interface DnsPayload {
+  messageType: 'query' | 'response';
+  transactionId: number;
+  hostname: string;
+  resolvedIp?: string;
+}
+
+export interface HttpPayload {
+  method?: 'GET' | 'POST';
+  path?: string;
+  host?: string;
+  statusCode?: number;
+  statusText?: string;
+  body?: string;
+  contentType?: string;
+}
+
 export interface PacketState {
   id: string;
   layer2: {
@@ -66,12 +96,27 @@ export interface PacketState {
     icmpType?: 'echo-request' | 'echo-reply' | 'ttl-exceeded' | 'unreachable';
     icmpSeq?: number;
     icmpOriginalTtl?: number;
+    dhcp?: DhcpPayload;
+    dns?: DnsPayload;
+    http?: HttpPayload;
   };
   status: 'queued' | 'in-transit' | 'received' | 'dropped';
   currentDeviceId: string;
   path: string[];
   dropReason?: string;
   createdAt: number;
+}
+
+export interface DhcpLease {
+  ip: string;
+  mac: string;
+  expiresAt: number;
+}
+
+export interface DeviceServiceState {
+  dhcp?: { leases: DhcpLease[]; nextOffset: number; config: import('./service-config').DhcpServiceConfig };
+  dns?: { records: Record<string, string> };
+  http?: { html: string };
 }
 
 export interface DeviceState {
@@ -85,6 +130,7 @@ export interface DeviceState {
   services: ServiceState[];
   outgoingQueue: PacketState[];
   pendingArp: Record<string, PacketState[]>;
+  serviceState?: DeviceServiceState;
 }
 
 export interface ConnectionState {
