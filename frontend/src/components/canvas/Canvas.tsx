@@ -11,6 +11,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import DeviceNode from './DeviceNode';
+import PacketOverlay from './PacketOverlay';
 import { useTopologyStore } from '../../stores/topologyStore';
 import { useSimulationUiStore } from '../../stores/simulationUiStore';
 import type { DeviceType } from '../../engine/types';
@@ -39,7 +40,6 @@ export default function Canvas() {
       e.preventDefault();
       const type = e.dataTransfer.getData('application/webfili-device') as DeviceType;
       if (!type) return;
-
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       addDevice(type, position);
     },
@@ -49,7 +49,7 @@ export default function Canvas() {
   const onConnectEnd: OnConnectEnd = useCallback(() => {}, []);
 
   return (
-    <div ref={wrapperRef} className="flex-1 h-full">
+    <div ref={wrapperRef} className="flex-1 h-full relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -92,6 +92,7 @@ export default function Canvas() {
           }}
         />
         <Controls className="!bg-gray-800 !border-gray-700 [&>button]:!bg-gray-700 [&>button]:!text-gray-200 [&>button:hover]:!bg-gray-600" />
+        <PacketOverlay />
       </ReactFlow>
     </div>
   );

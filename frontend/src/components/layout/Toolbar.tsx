@@ -1,5 +1,6 @@
 import { useSimulationUiStore } from '../../stores/simulationUiStore';
 import { useTopologyStore } from '../../stores/topologyStore';
+import { startSimulation, stopSimulation } from '../../simulation/loop';
 
 export default function Toolbar() {
   const { mode, setMode, clearLog } = useSimulationUiStore();
@@ -8,7 +9,9 @@ export default function Toolbar() {
   const toggleMode = () => {
     if (mode === 'construct') {
       setMode('simulate');
+      startSimulation();
     } else {
+      stopSimulation();
       setMode('construct');
       clearLog();
     }

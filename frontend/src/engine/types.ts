@@ -17,7 +17,7 @@ export interface ArpEntry {
 
 export interface MacEntry {
   mac: string;
-  portId: string;
+  connectionId: string;
   learnedAt: number;
 }
 
@@ -35,12 +35,21 @@ export interface ServiceState {
   config: Record<string, unknown>;
 }
 
+export interface ArpPayload {
+  operation: 'request' | 'reply';
+  senderMac: string;
+  senderIp: string;
+  targetMac: string;
+  targetIp: string;
+}
+
 export interface PacketState {
   id: string;
   layer2: {
     srcMac: string;
     destMac: string;
     etherType: 'ipv4' | 'arp';
+    arp?: ArpPayload;
   };
   layer3?: {
     srcIp: string;
@@ -53,6 +62,8 @@ export interface PacketState {
     destPort?: number;
     protocol: 'http' | 'dns' | 'dhcp' | 'icmp';
     payload: string;
+    icmpType?: 'echo-request' | 'echo-reply' | 'ttl-exceeded';
+    icmpSeq?: number;
   };
   status: 'queued' | 'in-transit' | 'received' | 'dropped';
   currentDeviceId: string;
@@ -71,18 +82,28 @@ export interface DeviceState {
   routingTable: RouteEntry[];
   services: ServiceState[];
   outgoingQueue: PacketState[];
+  pendingArp: Record<string, PacketState[]>;
 }
 
 export interface ConnectionState {
   id: string;
   sourceDeviceId: string;
-  sourcePortId: string;
   targetDeviceId: string;
-  targetPortId: string;
 }
 
 export interface SimulationState {
   devices: Record<string, DeviceState>;
   connections: Record<string, ConnectionState>;
   packets: PacketState[];
+}
+
+export interface TransitPacket {
+  id: string;
+  packet: PacketState;
+  fromDeviceId: string;
+  toDeviceId: string;
+  connectionId: string;
+  incomingConnectionId: string | null;
+  progress: number;
+  durationMs: number;
 }
