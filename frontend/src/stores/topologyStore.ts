@@ -38,6 +38,7 @@ interface TopologyStore {
   addDevice: (type: DeviceType, position: { x: number; y: number }) => void;
   removeDevice: (nodeId: string) => void;
   renameDevice: (nodeId: string, label: string) => void;
+  updateDeviceInterface: (nodeId: string, ifaceId: string, ip: string, subnet: string) => void;
   undo: () => void;
   redo: () => void;
   saveToLocalStorage: () => void;
@@ -137,6 +138,26 @@ export const useTopologyStore = create<TopologyStore>()(
       set((state) => ({
         nodes: state.nodes.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, label } } : n
+        ),
+      }));
+      get().saveToLocalStorage();
+    },
+
+    updateDeviceInterface: (nodeId, ifaceId, ip, subnet) => {
+      set((state) => ({
+        nodes: state.nodes.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  interfaces: {
+                    ...n.data.interfaces,
+                    [ifaceId]: { ...n.data.interfaces[ifaceId], ip, subnet },
+                  },
+                },
+              }
+            : n
         ),
       }));
       get().saveToLocalStorage();

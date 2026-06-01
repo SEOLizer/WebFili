@@ -27,7 +27,7 @@ type DeviceNodeProps = NodeProps<Node<DeviceNodeData>>;
 function DeviceNode({ id, data, selected }: DeviceNodeProps) {
   const d = data as DeviceNodeData;
   const { removeDevice, renameDevice } = useTopologyStore();
-  const mode = useSimulationUiStore((s) => s.mode);
+  const { mode, setSelectedDevice } = useSimulationUiStore();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(d.label);
 
@@ -38,7 +38,20 @@ function DeviceNode({ id, data, selected }: DeviceNodeProps) {
     }
   }, [draft, d.label, id, renameDevice]);
 
+  const handleDoubleClick = () => {
+    if (mode === 'construct') {
+      setEditing(true);
+    } else {
+      setSelectedDevice(id);
+    }
+  };
+
+  const handleClick = () => {
+    setSelectedDevice(id);
+  };
+
   const border = BORDER[d.deviceType] ?? 'border-gray-400';
+  const iface = d.interfaces['eth0'];
 
   return (
     <ContextMenu.Root>
@@ -48,10 +61,11 @@ function DeviceNode({ id, data, selected }: DeviceNodeProps) {
             relative flex flex-col items-center gap-1 px-3 py-2 rounded-lg
             bg-gray-800 border-2 ${border}
             ${selected ? 'ring-2 ring-white/50' : ''}
-            select-none cursor-${mode === 'construct' ? 'grab' : 'default'}
+            select-none cursor-${mode === 'construct' ? 'grab' : 'pointer'}
             min-w-[72px]
           `}
-          onDoubleClick={() => mode === 'construct' && setEditing(true)}
+          onDoubleClick={handleDoubleClick}
+          onClick={handleClick}
         >
           <Handle
             type="target"
@@ -80,6 +94,10 @@ function DeviceNode({ id, data, selected }: DeviceNodeProps) {
             </span>
           )}
 
+          {iface?.ip && (
+            <span className="text-[9px] text-gray-400 font-mono">{iface.ip}</span>
+          )}
+
           <Handle
             type="source"
             position={Position.Bottom}
@@ -92,17 +110,29 @@ function DeviceNode({ id, data, selected }: DeviceNodeProps) {
         <ContextMenu.Content className="bg-gray-800 border border-gray-600 rounded-md shadow-xl py-1 z-50 min-w-[140px]">
           <ContextMenu.Item
             className="px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 cursor-pointer outline-none"
-            onSelect={() => setEditing(true)}
+            onSelect={() => { setSelectedDevice(id); }}
           >
-            Umbenennen
+            Konfigurieren
           </ContextMenu.Item>
-          <ContextMenu.Separator className="my-1 h-px bg-gray-600" />
-          <ContextMenu.Item
-            className="px-3 py-1.5 text-sm text-red-400 hover:bg-gray-700 cursor-pointer outline-none"
-            onSelect={() => removeDevice(id)}
-          >
-            Löschen
-          </ContextMenu.Item>
+          {mode === 'construct' && (
+            <ContextMenu.Item
+              className="px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 cursor-pointer outline-none"
+              onSelect={() => setEditing(true)}
+            >
+              Umbenennen
+            </ContextMenu.Item>
+          )}
+          {mode === 'construct' && (
+            <>
+              <ContextMenu.Separator className="my-1 h-px bg-gray-600" />
+              <ContextMenu.Item
+                className="px-3 py-1.5 text-sm text-red-400 hover:bg-gray-700 cursor-pointer outline-none"
+                onSelect={() => removeDevice(id)}
+              >
+                Löschen
+              </ContextMenu.Item>
+            </>
+          )}
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

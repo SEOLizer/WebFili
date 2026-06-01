@@ -8,10 +8,12 @@ interface SimulationUiStore {
   mode: SimMode;
   packetLog: PacketState[];
   activePacketId: string | null;
+  selectedDeviceId: string | null;
   deviceStats: Record<string, { sent: number; received: number; dropped: number }>;
 
   setMode: (mode: SimMode) => void;
   setActivePacket: (id: string | null) => void;
+  setSelectedDevice: (id: string | null) => void;
   appendPacketLog: (packets: PacketState[]) => void;
   updateDeviceStats: (stats: Record<string, { sent: number; received: number; dropped: number }>) => void;
   clearLog: () => void;
@@ -22,15 +24,24 @@ export const useSimulationUiStore = create<SimulationUiStore>()(
     mode: 'construct',
     packetLog: [],
     activePacketId: null,
+    selectedDeviceId: null,
     deviceStats: {},
 
     setMode: (mode) => set({ mode }),
     setActivePacket: (id) => set({ activePacketId: id }),
+    setSelectedDevice: (id) => set({ selectedDeviceId: id }),
 
     appendPacketLog: (packets) =>
-      set((state) => ({
-        packetLog: [...state.packetLog, ...packets].slice(-500),
-      })),
+      set((state) => {
+        const combined = [...state.packetLog, ...packets];
+        const seen = new Set<string>();
+        const deduped = combined.filter((p) => {
+          if (seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        });
+        return { packetLog: deduped.slice(-500) };
+      }),
 
     updateDeviceStats: (stats) => set({ deviceStats: stats }),
     clearLog: () => set({ packetLog: [], activePacketId: null }),

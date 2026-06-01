@@ -8,6 +8,11 @@ import RightPanel from './components/panels/RightPanel';
 import { useTopologyStore } from './stores/topologyStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
+if (import.meta.env.DEV) {
+  // Expose stores for Playwright testing
+  (window as unknown as Record<string, unknown>).__topoStore = useTopologyStore;
+}
+
 function AppInner() {
   const loadFromLocalStorage = useTopologyStore((s) => s.loadFromLocalStorage);
   useKeyboardShortcuts();
