@@ -8,6 +8,7 @@ import RightPanel from './components/panels/RightPanel';
 import { useTopologyStore } from './stores/topologyStore';
 import { useSimulationUiStore } from './stores/simulationUiStore';
 import { useAuthStore } from './stores/authStore';
+import { useThemeStore } from './stores/themeStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 if (import.meta.env.DEV) {
@@ -21,6 +22,7 @@ if (import.meta.env.DEV) {
 function AppInner() {
   const loadFromLocalStorage = useTopologyStore((s) => s.loadFromLocalStorage);
   const initFromStorage = useAuthStore((s) => s.initFromStorage);
+  const effective = useThemeStore((s) => s.effective);
   useKeyboardShortcuts();
 
   useEffect(() => {
@@ -29,7 +31,7 @@ function AppInner() {
   }, [initFromStorage, loadFromLocalStorage]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 text-white">
+    <div className={`flex flex-col h-full ${effective === 'dark' ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}`}>
       <Toolbar />
       <div className="flex flex-1 min-h-0">
         <Toolbox />
