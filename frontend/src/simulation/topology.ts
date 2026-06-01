@@ -1,6 +1,7 @@
 import type { DeviceState } from '../engine/types';
 import { useTopologyStore } from '../stores/topologyStore';
 import { simState } from './simState';
+
 const HOP_DURATION_MS = 300;
 export { HOP_DURATION_MS };
 
@@ -12,7 +13,6 @@ export function initSimFromTopology(): void {
   simState.transitPackets = [];
   simState.packetLog = [];
 
-  // Build devices
   for (const node of nodes) {
     const d = node.data;
     const device: DeviceState = {
@@ -32,10 +32,26 @@ export function initSimFromTopology(): void {
       outgoingQueue: [],
       pendingArp: {},
     };
+
+    // Init service state
+    if (d.services) {
+      device.serviceState = {};
+      if (d.services.dhcp?.enabled) {
+        device.serviceState.dhcp = { leases: [], nextOffset: 0, config: d.services.dhcp };
+      }
+      if (d.services.dns?.enabled) {
+        device.serviceState.dns = {
+          records: Object.fromEntries((d.services.dns.records ?? []).map(r => [r.hostname, r.ip])),
+        };
+      }
+      if (d.services.http?.enabled) {
+        device.serviceState.http = { html: d.services.http.html ?? '<h1>WebFilius</h1>' };
+      }
+    }
+
     simState.devices[node.id] = device;
   }
 
-  // Build connections
   for (const edge of edges) {
     simState.connections[edge.id] = {
       id: edge.id,
@@ -44,18 +60,14 @@ export function initSimFromTopology(): void {
     };
   }
 
-  // Map router interfaces to their connections (in order of edges)
+  // Map router interfaces to connections
   for (const node of nodes) {
     if (node.data.deviceType !== 'router') continue;
     const device = simState.devices[node.id];
     const routerEdges = edges.filter(e => e.source === node.id || e.target === node.id);
     const ifaceIds = Object.keys(device.interfaces);
-
     routerEdges.forEach((edge, i) => {
-      const ifaceId = ifaceIds[i];
-      if (ifaceId && device.interfaces[ifaceId]) {
-        device.interfaces[ifaceId].connectedTo = edge.id;
-      }
+      if (ifaceIds[i]) device.interfaces[ifaceIds[i]].connectedTo = edge.id;
     });
   }
 }
