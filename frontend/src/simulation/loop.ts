@@ -4,6 +4,7 @@ import { processPacketAtDevice } from '../engine/packet';
 import type { TransitPacket, PacketState } from '../engine/types';
 import type { Transmission } from '../engine/arp';
 import { useSimulationUiStore } from '../stores/simulationUiStore';
+import { useWanStore } from '../stores/wanStore';
 import { nanoid } from '../engine/nanoid';
 
 const SYNC_INTERVAL_MS = 150;
@@ -14,6 +15,7 @@ let lastSync = 0;
 
 export function startSimulation(): void {
   initSimFromTopology();
+  setupWanIncomingHandler();
   lastTime = performance.now();
   lastSync = lastTime;
   if (rafId !== null) cancelAnimationFrame(rafId);
@@ -25,6 +27,44 @@ export function stopSimulation(): void {
     cancelAnimationFrame(rafId);
     rafId = null;
   }
+}
+
+function setupWanIncomingHandler(): void {
+  useWanStore.getState().setIncomingPacketHandler((nodeId, frame) => {
+    const device = simState.devices[nodeId];
+    if (!device) return;
+    // Inject packet as arriving at the WAN-Cloud node from the remote peer
+    const transit: TransitPacket = {
+      id: nanoid(),
+      packet: { ...frame, status: 'in-transit', currentDeviceId: nodeId },
+      fromDeviceId: nodeId,
+      toDeviceId: nodeId,
+      connectionId: '__wan_incoming__',
+      incomingConnectionId: null,
+      progress: 1.0,
+      durationMs: HOP_DURATION_MS,
+    };
+    // Find the connection from this WAN-Cloud node outward
+    const conn = Object.values(simState.connections).find(
+      (c) => c.sourceDeviceId === nodeId || c.targetDeviceId === nodeId
+    );
+    if (conn) {
+      const outDeviceId = conn.sourceDeviceId === nodeId ? conn.targetDeviceId : conn.sourceDeviceId;
+      const incomingTransit: TransitPacket = {
+        id: nanoid(),
+        packet: { ...frame, status: 'in-transit', currentDeviceId: nodeId },
+        fromDeviceId: nodeId,
+        toDeviceId: outDeviceId,
+        connectionId: conn.id,
+        incomingConnectionId: null,
+        progress: 0,
+        durationMs: HOP_DURATION_MS,
+      };
+      simState.transitPackets.push(incomingTransit);
+      logPacket({ ...frame, status: 'in-transit' });
+    }
+    void transit;
+  });
 }
 
 function tick(now: number): void {
@@ -79,7 +119,12 @@ function deliverPacket(tp: TransitPacket): void {
   );
 
   for (const tx of transmissions) {
-    enqueueTransit(tx, tp.connectionId);
+    if (tx.toDeviceId === '__wan__') {
+      // Packet reached a WAN-Cloud node – emit via Socket.io
+      useWanStore.getState().emitPacket(tx.fromDeviceId, tx.packet);
+    } else {
+      enqueueTransit(tx, tp.connectionId);
+    }
   }
 }
 

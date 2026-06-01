@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import authRouter from './routes/auth';
 import projectsRouter from './routes/projects';
 import linksRouter from './routes/links';
+import { initSocketServer } from './websocket/broker';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -27,9 +29,12 @@ app.use('/api/auth', authRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/links', linksRouter);
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, version: '0.5.0' }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, version: '0.6.0' }));
 
-app.listen(PORT, () => {
+const httpServer = http.createServer(app);
+export const io = initSocketServer(httpServer);
+
+httpServer.listen(PORT, () => {
   console.log(`WebFilius Backend läuft auf http://localhost:${PORT}`);
 });
 

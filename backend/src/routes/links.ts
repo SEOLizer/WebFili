@@ -1,20 +1,61 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../middleware/auth';
+import { z } from 'zod';
+import { nanoid } from 'nanoid';
+import { prisma } from '../lib/prisma';
+import { requireAuth, requireRole, type AuthRequest } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
 
-// WP 6 – Stubs for virtual link management (Socket.io WAN broker)
-router.get('/', requireRole('teacher'), (_req, res) => {
-  res.json([]);
+const CreateLinkSchema = z.object({
+  maxUsers: z.number().int().min(2).max(30).default(30),
+  expiresInHours: z.number().int().min(1).max(72).optional(),
 });
 
-router.post('/', requireRole('teacher'), (_req, res) => {
-  res.status(501).json({ error: 'Implementiert in WP 6' });
+router.get('/', requireRole('teacher'), async (req: AuthRequest, res) => {
+  const links = await prisma.virtualLink.findMany({
+    where: { creatorId: req.user!.sub },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(links);
 });
 
-router.delete('/:token', requireRole('teacher'), (_req, res) => {
-  res.status(501).json({ error: 'Implementiert in WP 6' });
+router.post('/', requireRole('teacher'), async (req: AuthRequest, res) => {
+  const result = CreateLinkSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: 'Ungültige Eingabe', details: result.error.flatten() });
+    return;
+  }
+
+  const linkToken = nanoid(32);
+  const roomName = `room_${nanoid(16)}`;
+  const expiresAt = result.data.expiresInHours
+    ? new Date(Date.now() + result.data.expiresInHours * 3600 * 1000)
+    : null;
+
+  const link = await prisma.virtualLink.create({
+    data: {
+      linkToken,
+      roomName,
+      creatorId: req.user!.sub,
+      maxUsers: result.data.maxUsers,
+      expiresAt,
+    },
+  });
+  res.status(201).json(link);
+});
+
+router.delete('/:token', requireRole('teacher'), async (req: AuthRequest, res) => {
+  const token = String(req.params.token);
+  const existing = await prisma.virtualLink.findFirst({
+    where: { linkToken: token, creatorId: req.user!.sub },
+  });
+  if (!existing) {
+    res.status(404).json({ error: 'Link nicht gefunden' });
+    return;
+  }
+  await prisma.virtualLink.delete({ where: { linkToken: token } });
+  res.json({ ok: true });
 });
 
 export default router;

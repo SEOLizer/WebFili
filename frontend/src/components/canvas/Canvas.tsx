@@ -11,6 +11,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import DeviceNode from './DeviceNode';
+import WanCloudNode from './WanCloudNode';
 import PacketOverlay from './PacketOverlay';
 import { useTopologyStore } from '../../stores/topologyStore';
 import { useSimulationUiStore } from '../../stores/simulationUiStore';
@@ -21,7 +22,7 @@ const nodeTypes: NodeTypes = {
   serverNode: DeviceNode as NodeTypes[string],
   switchNode: DeviceNode as NodeTypes[string],
   routerNode: DeviceNode as NodeTypes[string],
-  'wan-cloudNode': DeviceNode as NodeTypes[string],
+  'wan-cloudNode': WanCloudNode as NodeTypes[string],
 };
 
 export default function Canvas() {
