@@ -9,6 +9,8 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite)](https://vite.dev)
 
+![WebFilius Screenshot](.github/assets/screenshot.png)
+
 ---
 
 ## Why WebFilius?
